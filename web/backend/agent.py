@@ -24,6 +24,7 @@ import inference
 import model_catalog
 import settings
 import toolkit
+import usage as usage_module
 from store import ChatStore
 from tools import TOOL_SCHEMAS, ToolContext, ToolResult, dispatch
 
@@ -49,6 +50,7 @@ class Run:
     started_at: float = field(default_factory=time.time)
     last_event_at: float = field(default_factory=time.time)
     phase: str = "Preparing the build workspace"
+    usage: dict = field(default_factory=lambda: usage_module.new_totals())  # tokens so far this turn
 
     def emit(self, event: str, data: dict) -> None:
         self.last_event_at = time.time()
@@ -240,6 +242,7 @@ async def start_turn(store: ChatStore, chat_id: str, text: str, llm_model_id: Op
     run.options, run.approvals = options, {}
     run.started_at = run.last_event_at = time.time()
     run.phase = "Preparing the build workspace"
+    run.usage = usage_module.new_totals()
     run.task = asyncio.create_task(_run_turn(store, run, entry))
 
 
@@ -319,6 +322,12 @@ async def _run_turn(store: ChatStore, run: Run, entry: dict) -> None:
                     run.emit("text", {"delta": delta.content})
 
             full = litellm.stream_chunk_builder(chunks, messages=messages)
+            if getattr(full, "usage", None):
+                try:
+                    cost = litellm.completion_cost(completion_response=full)
+                except Exception:  # noqa: BLE001 - unknown model pricing
+                    cost = None
+                usage_module.record(run, full.usage, model=entry["litellm_params"]["model"], cost=cost)
             reply = full.choices[0].message
             tool_calls = [
                 {"id": tc.id, "type": "function",
@@ -381,6 +390,9 @@ async def _run_turn(store: ChatStore, run: Run, entry: dict) -> None:
         save({"role": "assistant", "_ui_only": True, "_error": True, "content": message})
         run.emit("turn_error", {"message": message})   # not "error": EventSource reserves it
     finally:
+        if run.usage["steps"]:
+            save({"role": "assistant", "_ui_only": True, "_notice": True, "_usage": dict(run.usage),
+                  "content": usage_module.summary(run.usage)})
         run.draft, run.tools_running = "", {}
         for _, future in run.approvals.values():
             if not future.done():

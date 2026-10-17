@@ -17,6 +17,7 @@ import browser_auth
 import inference
 import llm_config
 import model_catalog
+import usage as usage_module
 from tools import ToolContext
 
 
@@ -109,5 +110,9 @@ async def run_claude(store, run, entry, save, execute, prompt, use_tools):
                         run.emit("text", {"delta": text})
                     save({"role": "assistant", "content": text, "_llm_model": model})
                     run.draft = ""
-            elif isinstance(event, ResultMessage) and event.is_error:
-                raise RuntimeError("Claude runtime could not complete the turn")
+            elif isinstance(event, ResultMessage):
+                if event.usage:
+                    usage_module.record(run, event.usage, model=model, cost=event.total_cost_usd,
+                                        steps=max(1, event.num_turns or 1))
+                if event.is_error:
+                    raise RuntimeError("Claude runtime could not complete the turn")

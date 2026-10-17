@@ -184,7 +184,8 @@ def test_agent_roundtrips_streamed_reasoning_through_tools_storage_and_http(endp
     assert not any(k.startswith("_") for k in continued)
     stored = ChatStore(settings.CHATS_DIR, settings.OUTPUT_DIR).messages(chat_id)
     assert stored[1]["_reasoning_details"] == details
-    assert stored[-1]["content"] == "OK"
+    assert [m for m in stored if not m.get("_ui_only")][-1]["content"] == "OK"
+    assert stored[-1].get("_usage"), "the turn ends with a token-usage notice"
     assert "opaque-test" not in json.dumps(events)
     assert "opaque-test" not in TestClient(app).get(f"/api/chats/{chat_id}").text
     assert agent.llm_history(stored, False, lambda _: None, model)[1]["reasoning_details"] == details
