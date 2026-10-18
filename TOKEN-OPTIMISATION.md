@@ -40,6 +40,23 @@ count, more once JSON-escaped and with images), and that replay is new to
 the cache each turn (105k uncached). Every brickpipe repair round pays this,
 and it grows each round.
 
+### Compaction A/B (same repair request, same model, same chat)
+
+brickpipe re-checked run D's round-1 model and sent the same repair request
+to the same chat twice, with `LDRAW_NOVA_COMPACT_TURNS=0` and then with
+compaction on. The second run had one more earlier turn to carry, so the
+comparison is, if anything, against compaction. In both runs the agent
+found the fix already in place and confirmed it.
+
+| Repair turn | Earlier turns sent | First request | Input | Cached | Output | Steps | Cost |
+|---|---|---|---|---|---|---|---|
+| Full replay (`=0`) | ~36k | 106k | 539k | 80% | 1.8k | 6 | ~$1.04 |
+| Compacted | ~1k | **32k** | **169k** | 80% | 1.4k | 5 | **~$0.32** |
+
+About 70% less input and cost for a follow-up turn; better than predicted
+(~40k, ~$0.40). Still to confirm: a repair that needs new work, to check
+the agent loses nothing it needs from the compacted history.
+
 **B did not reduce input per step** (predicted 35-45k). Back-of-envelope: the
 system prompt is ~19k tokens and the agent's own writing (generator code sent
 as tool arguments, narration; 58-61k tokens per turn) stays in context, about
