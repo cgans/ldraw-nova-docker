@@ -39,16 +39,19 @@ comes from (below) so the next change is chosen from data.
    notice also reports characters added by origin (system prompt, replayed
    earlier turns, the agent's tool calls, tool results, narration) and the
    prompt size of the first, middle and last request.
-4. **Priority next: Jev (TypeSafe semantic search) on vs off.** Without
-   `TYPESAFE_API_KEY` the agent falls back to keyword (FTS/BM25) search,
-   which may cost extra search-and-read steps. Test after run C: the
-   tractor brief twice without the key and twice with it, comparing steps,
-   input per step, cost (Jev's own charges included) and the model's
-   quality via brickpipe's checks. Also: when no key is configured, say so
-   in the system prompt so the agent skips the availability check it
-   currently spends a step or two on at the start of every design.
-5. *Planned, depending on the makeup:* load the builder guides on demand
+4. *Planned, depending on the makeup:* load the builder guides on demand
    instead of in every system prompt; or stable system-prompt prefix (move the work listing and NOTES.md
    to the end) so consecutive turns share a cache.
-6. *Planned:* resume the runtime session between turns instead of replaying
+5. *Planned:* resume the runtime session between turns instead of replaying
    the whole history as JSON. Only shows on runs that need repair rounds.
+
+## Later (deprioritised)
+
+- **Jev (TypeSafe semantic search) on vs off.** Without `TYPESAFE_API_KEY`
+  the agent uses keyword search. Worth a measured comparison (steps, input
+  per step, cost including Jev's charges, model quality) once the token
+  work is done; rate limits are not a concern for a household. Pricing
+  still to check.
+- **Tell the agent when Jev is not configured**, so it skips the
+  availability check at the start of every design.
+
