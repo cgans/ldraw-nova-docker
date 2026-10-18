@@ -95,6 +95,9 @@ async def run_claude(store, run, entry, save, execute, prompt, use_tools):
         permission_mode="dontAsk", max_turns=MAX_STEPS, effort=run.options.get("effort"),
         include_partial_messages=True, max_buffer_size=32 * 1024 * 1024,
     )
+    usage_module.add_makeup(run, "system_prompt", messages[0]["content"])
+    usage_module.add_makeup(run, "history", json.dumps(messages[1:]))  # earlier turns, replayed as one message
+    seen_steps: set = set()
     async with ClaudeSDKClient(options=options) as client:
         await client.query(user_message())
         async for event in client.receive_response():
@@ -104,7 +107,12 @@ async def run_claude(store, run, entry, save, execute, prompt, use_tools):
                     run.draft += delta["text"]
                     run.emit("text", {"delta": delta["text"]})
             elif isinstance(event, AssistantMessage):
+                step_id = event.message_id or event.uuid
+                if event.usage and step_id not in seen_steps:
+                    seen_steps.add(step_id)
+                    usage_module.step_input(run, event.usage)
                 text = "\n".join(b.text for b in event.content if isinstance(b, TextBlock))
+                usage_module.add_makeup(run, "narration", text)
                 if text:
                     if not run.draft:
                         run.emit("text", {"delta": text})

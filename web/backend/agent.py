@@ -302,6 +302,8 @@ async def _run_turn(store: ChatStore, run: Run, entry: dict) -> None:
         params = await inference.params_for(entry, run.options)
         for _step in range(MAX_STEPS):
             prompt = system_prompt(store, chat_id) + mode_prompt(run.options)
+            if _step == 0:
+                usage_module.add_makeup(run, "system_prompt", prompt)
             messages = [{"role": "system", "content": prompt},
                         *llm_history(store.messages(chat_id), vision, lambda ref: store.resolve(chat_id, ref), entry["litellm_params"]["model"], mark_turns=True)]
             budget = run.options.get("context_tokens") or model_catalog.profile(entry["litellm_params"]["model"])["context_window"]
@@ -329,7 +331,9 @@ async def _run_turn(store: ChatStore, run: Run, entry: dict) -> None:
                 except Exception:  # noqa: BLE001 - unknown model pricing
                     cost = None
                 usage_module.record(run, full.usage, model=entry["litellm_params"]["model"], cost=cost)
+                usage_module.step_input(run, full.usage)
             reply = full.choices[0].message
+            usage_module.add_makeup(run, "narration", reply.content)
             tool_calls = [
                 {"id": tc.id, "type": "function",
                  "function": {"name": tc.function.name, "arguments": tc.function.arguments or "{}"}}
@@ -393,7 +397,7 @@ async def _run_turn(store: ChatStore, run: Run, entry: dict) -> None:
     finally:
         if run.usage["steps"]:
             save({"role": "assistant", "_ui_only": True, "_notice": True, "_usage": dict(run.usage),
-                  "content": usage_module.summary(run.usage)})
+                  "content": usage_module.summary(run.usage) + ". " + usage_module.makeup_summary(run.usage)})
         run.draft, run.tools_running = "", {}
         for _, future in run.approvals.values():
             if not future.done():
@@ -443,7 +447,10 @@ async def execute_tool(run: Run, ctx: ToolContext, call_id: str, name: str, argu
         if not approved:
             return ToolResult("Tool denied by the user or approval timed out. Do not retry without a new user instruction.")
     scoped = replace(ctx, emit=lambda event, data: run.emit(event, {**data, "id": call_id} if event == "tool_output" else data))
-    return await dispatch(scoped, name, arguments)
+    usage_module.add_makeup(run, "tool_calls", arguments)
+    result = await dispatch(scoped, name, arguments)
+    usage_module.add_makeup(run, "tool_results", result.content)
+    return result
 
 
 def decide(chat_id: str, approval_id: str, approved: bool) -> bool:

@@ -40,3 +40,17 @@ def test_record_accumulates_streams_and_summarises():
     plain = FakeRun()
     usage.record(plain, {"input_tokens": 500, "output_tokens": 20}, model="m", steps=7)
     assert usage.summary(plain.usage) == "Tokens this turn: 500 in, 20 out, 7 step(s)"
+
+
+def test_makeup_and_per_step_curve():
+    run = FakeRun()
+    usage.add_makeup(run, "system_prompt", "s" * 76000)
+    usage.add_makeup(run, "tool_calls", "c" * 40000)
+    usage.add_makeup(run, "tool_results", "r" * 8000)
+    usage.add_makeup(run, "narration", None)
+    for n in (20000, 45000, 90000):
+        usage.step_input(run, {"prompt_tokens": n})
+    text = usage.makeup_summary(run.usage)
+    assert text.startswith("Context added this turn (approx. tokens): system prompt 19k, earlier turns 0, "
+                           "agent's tool calls 10k, tool results 2k, narration 0")
+    assert text.endswith("Prompt per step: first 20k, middle 45k, last 90k (3 requests)")
