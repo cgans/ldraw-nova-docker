@@ -11,6 +11,7 @@ import asyncio
 import base64
 import json
 import logging
+import os
 import time
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -280,6 +281,50 @@ async def subscribe(chat_id: str) -> AsyncIterator[tuple[str, dict]]:
                 return
     finally:
         run.subscribers.discard(queue)
+
+
+# Replaying a whole earlier design into every follow-up turn is the largest
+# avoidable cost in a repair loop (a 3k-token fix measured at ~100k tokens per
+# request). With compaction, a follow-up turn starts from the original brief,
+# the agent's last answer, earlier follow-up requests in brief, and the new
+# message; the system prompt already carries NOTES.md and the work listing.
+# Set LDRAW_NOVA_COMPACT_TURNS=0 to replay everything as before.
+COMPACT_TURNS = os.environ.get("LDRAW_NOVA_COMPACT_TURNS", "1").strip().lower() not in ("0", "false", "no")
+EARLIER_REQUEST_CHARS = 400
+
+
+def _text_of(message: dict) -> str:
+    content = message.get("content")
+    if isinstance(content, list):
+        return "\n".join(b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text")
+    return content or ""
+
+
+def compact_history(history: list[dict]) -> list[dict]:
+    """History for a follow-up turn without the earlier turns' tool traffic.
+
+    `history` comes from llm_history(..., mark_turns=True). The first turn is
+    returned unchanged. Later turns keep: the first user message (the brief),
+    one assistant message holding the last answer of the previous turns plus
+    a short list of earlier follow-up requests, then the current turn as is.
+    """
+    starts = [i for i, m in enumerate(history) if m.get("_turn_start")]
+    if len(starts) < 2:
+        return history
+    brief, current = history[starts[0]], history[starts[-1]:]
+    earlier = history[starts[0] + 1:starts[-1]]
+    answers = [m for m in earlier if m.get("role") == "assistant" and not m.get("tool_calls") and _text_of(m).strip()]
+    requests = [history[i] for i in starts[1:-1]]
+    note = ["[Earlier turns of this chat are summarised here to save context; their tool calls and outputs "
+            "are not repeated. NOTES.md and the work-folder listing in the system prompt, and the files in "
+            "the work folder, are the record of what was built. Read them rather than assuming.]"]
+    if requests:
+        note.append("Earlier follow-up requests, oldest first:")
+        note += [f"- {_text_of(m)[:EARLIER_REQUEST_CHARS].strip()}" for m in requests]
+    if answers:
+        note.append("My last answer before this request:\n" + _text_of(answers[-1]).strip())
+    summary = {"role": "assistant", "content": "\n".join(note)}
+    return [brief, summary, *current]
 
 
 async def _run_turn(store: ChatStore, run: Run, entry: dict) -> None:

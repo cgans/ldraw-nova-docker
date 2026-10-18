@@ -64,11 +64,15 @@ comes from (below) so the next change is chosen from data.
    notice also reports characters added by origin (system prompt, replayed
    earlier turns, the agent's tool calls, tool results, narration) and the
    prompt size of the first, middle and last request.
-4. **Next: compact repair turns.** Instead of replaying the full history,
-   continue a turn from the brief, the current NOTES.md (the hand-over notes
-   the system prompt already asks the agent to keep), the latest model and
-   the new message. Prediction: repair turn's first request ~99k -> ~40k,
-   cost ~$1.06 -> ~$0.40. Measured on a run that needs a repair.
+4. **Compact follow-up turns** (`agent.compact_history`, Claude runtime
+   path). A follow-up turn no longer replays the earlier turns' tool calls
+   and outputs: it gets the brief, one note with the earlier follow-up
+   requests (first 400 characters each) and the agent's last answer, then
+   the new message. The system prompt already carries NOTES.md and the work
+   listing. `LDRAW_NOVA_COMPACT_TURNS=0` restores the full replay for A/B.
+   Prediction: a repair turn's first request ~99k -> ~40k, cost ~$1.06 ->
+   ~$0.40. Measured by repairing the same model from the same chat twice,
+   once with the variable at 0 and once at 1.
 5. *Later, depending on the makeup:* load the builder guides on demand
    instead of in every system prompt; or stable system-prompt prefix (move the work listing and NOTES.md
    to the end) so consecutive turns share a cache.

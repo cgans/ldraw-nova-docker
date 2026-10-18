@@ -22,7 +22,7 @@ from tools import ToolContext
 
 
 async def run_claude(store, run, entry, save, execute, prompt, use_tools):
-    from agent import MAX_STEPS, available_tools, llm_history, mode_prompt
+    from agent import COMPACT_TURNS, MAX_STEPS, available_tools, compact_history, llm_history, mode_prompt
 
     ctx = ToolContext(chat_id=run.chat_id, store=store, emit=run.emit)
     sdk_tools = []
@@ -59,9 +59,11 @@ async def run_claude(store, run, entry, save, execute, prompt, use_tools):
                                     input_schema=fn["parameters"], handler=handle))
 
     model = entry["litellm_params"]["model"]
-    messages = [{"role": "system", "content": prompt + mode_prompt(run.options)},
-                *llm_history(store.messages(run.chat_id), llm_config.capabilities(entry)["vision"] is True,
-                             lambda ref: store.resolve(run.chat_id, ref), model, mark_turns=True)]
+    history = llm_history(store.messages(run.chat_id), llm_config.capabilities(entry)["vision"] is True,
+                          lambda ref: store.resolve(run.chat_id, ref), model, mark_turns=True)
+    if COMPACT_TURNS:
+        history = compact_history(history)
+    messages = [{"role": "system", "content": prompt + mode_prompt(run.options)}, *history]
     budget = run.options.get("context_tokens") or model_catalog.profile(model)["context_window"]
     messages, removed = inference.bounded_history(messages, model, budget)
     if removed:
