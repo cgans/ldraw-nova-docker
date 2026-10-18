@@ -24,6 +24,22 @@ stays in context for the whole single-turn design, and the renders viewed.
 The cap in B never fired (no `tool-output` files): tool results are small.
 Lever: the runtime's `effort` (brickpipe sent none, so the default "high").
 
+| D | effort **medium** (design turn) | 1 | 54 | 3,521k | 96% | 58k | ~65k | ~$2.91 |
+| D | repair turn (one round needed) | 1 | 8 | 618k | 83% | 3.4k | ~103k | ~$1.06 |
+
+**D, design turn:** additions Nova can see: tool calls 8k, tool results 18k,
+narration 1k, 11 images ~12k. Thinking text returned is a summary (310), but
+output not seen as calls or narration was 49k, against ~61k in C: medium
+effort cut thinking by about a fifth, and cost by ~8%. A weak lever on this
+model; not worth a quality risk on its own.
+
+**D, repair turn:** the clearest waste so far. A 3.4k-token fix cost $1.06:
+every request started at ~99-107k tokens because the whole design
+conversation is replayed as one JSON message (earlier turns ~32k by Nova's
+count, more once JSON-escaped and with images), and that replay is new to
+the cache each turn (105k uncached). Every brickpipe repair round pays this,
+and it grows each round.
+
 **B did not reduce input per step** (predicted 35-45k). Back-of-envelope: the
 system prompt is ~19k tokens and the agent's own writing (generator code sent
 as tool arguments, narration; 58-61k tokens per turn) stays in context, about
@@ -48,10 +64,15 @@ comes from (below) so the next change is chosen from data.
    notice also reports characters added by origin (system prompt, replayed
    earlier turns, the agent's tool calls, tool results, narration) and the
    prompt size of the first, middle and last request.
-4. *Planned, depending on the makeup:* load the builder guides on demand
+4. **Next: compact repair turns.** Instead of replaying the full history,
+   continue a turn from the brief, the current NOTES.md (the hand-over notes
+   the system prompt already asks the agent to keep), the latest model and
+   the new message. Prediction: repair turn's first request ~99k -> ~40k,
+   cost ~$1.06 -> ~$0.40. Measured on a run that needs a repair.
+5. *Later, depending on the makeup:* load the builder guides on demand
    instead of in every system prompt; or stable system-prompt prefix (move the work listing and NOTES.md
    to the end) so consecutive turns share a cache.
-5. *Planned:* resume the runtime session between turns instead of replaying
+6. *Alternative to 4:* resume the runtime session between turns instead of replaying
    the whole history as JSON. Only shows on runs that need repair rounds.
 
 ## Later (deprioritised)
