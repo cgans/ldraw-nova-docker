@@ -100,7 +100,8 @@ def work_listing(work_dir: Path) -> str:
     continues the chat (possibly another model) sees what earlier turns left."""
     if not work_dir.is_dir():
         return "(empty)"
-    files = sorted(p for p in work_dir.rglob("*") if p.is_file() and ".scripts" not in p.relative_to(work_dir).parts)
+    hidden = (".scripts", "tool-output")  # bookkeeping folders; listing them would churn the prompt
+    files = sorted(p for p in work_dir.rglob("*") if p.is_file() and not set(hidden) & set(p.relative_to(work_dir).parts))
     scripts = sum(1 for _ in (work_dir / ".scripts").glob("*")) if (work_dir / ".scripts").is_dir() else 0
     lines = [f"- {p.relative_to(work_dir)} ({p.stat().st_size} bytes)" for p in files[:WORK_LISTING_LIMIT]]
     if len(files) > WORK_LISTING_LIMIT:

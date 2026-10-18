@@ -12,6 +12,8 @@ import inspect
 import hashlib
 import json
 import re
+import uuid
+import os
 import shutil
 import time
 from dataclasses import dataclass, field
@@ -95,9 +97,36 @@ def resolve_path(ctx: ToolContext, path: str, *, write: bool = False) -> Path:
     return resolved
 
 
+# Command output beyond this many characters is saved to a file in the work
+# folder and only its start and end go back to the model. Every step re-reads
+# the whole conversation, so one 20 000-character JSON dump early in a build
+# is paid for again on every later step. 0 turns the cap off.
+TOOL_RESULT_CHARS = int(os.environ.get("LDRAW_NOVA_TOOL_RESULT_CHARS", "6000"))
+TOOL_OUTPUT_DIR = "tool-output"
+
+
+def compact_output(ctx: ToolContext, text: str, limit: int | None = None) -> str:
+    """`text` if it fits the cap; otherwise its head and tail with a pointer to
+    the full text, which is written to output/tool-output/ for read_file."""
+    limit = TOOL_RESULT_CHARS if limit is None else limit
+    if limit <= 0 or len(text) <= limit:
+        return text
+    folder = ctx.work_dir / TOOL_OUTPUT_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    sandbox.give_to_agent(folder)
+    name = f"{time.strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:6]}.txt"
+    (folder / name).write_text(text)
+    sandbox.give_to_agent(folder / name)
+    head, tail = text[: limit // 3], text[-(limit - limit // 3):]
+    omitted = len(text) - len(head) - len(tail)
+    return (f"{head}\n... [{omitted} characters omitted to save context. The full output "
+            f"({len(text)} characters) is in output/{TOOL_OUTPUT_DIR}/{name}; read_file it, "
+            f"with offset={len(head)} to continue from here, if you need the missing part.] ...\n{tail}")
+
+
 async def _run_and_collect(ctx: ToolContext, argv: list[str], timeout: int) -> ToolResult:
     result = await run_command(ctx, argv, timeout)
-    return ToolResult(result.as_text())
+    return ToolResult(compact_output(ctx, result.as_text()))
 
 
 async def run_command(ctx: ToolContext, argv: list[str], timeout: int) -> sandbox.RunResult:
