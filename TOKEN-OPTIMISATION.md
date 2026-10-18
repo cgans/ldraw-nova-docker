@@ -14,6 +14,15 @@ between runs of the same brief.
 |---|---|---|---|---|---|---|---|---|
 | A | usage recording only | 1 (clean first time) | 40 | 2,386k | 95% | 58k | ~60k | ~$2.58 |
 | B | + command output capped at 6000 chars | 1 (clean first time) | 49 | 3,028k | 96% | 61k | ~62k | ~$2.85 |
+| C | + context makeup recorded | 1 (clean first time) | 48 | 3,571k | 96% | 70k | ~74k | ~$3.16 |
+
+**C's makeup:** prompt per request 29k first, 88k middle, 137k last (39
+requests). Nova-visible additions: system prompt 19k, the agent's tool calls
+8k, tool results 14k, narration 1k. The other ~85k of growth is not visible
+to Nova: the model's thinking (70k output against ~9k visible output), which
+stays in context for the whole single-turn design, and the renders viewed.
+The cap in B never fired (no `tool-output` files): tool results are small.
+Lever: the runtime's `effort` (brickpipe sent none, so the default "high").
 
 **B did not reduce input per step** (predicted 35-45k). Back-of-envelope: the
 system prompt is ~19k tokens and the agent's own writing (generator code sent

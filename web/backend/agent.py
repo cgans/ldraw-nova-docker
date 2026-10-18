@@ -334,6 +334,7 @@ async def _run_turn(store: ChatStore, run: Run, entry: dict) -> None:
                 usage_module.step_input(run, full.usage)
             reply = full.choices[0].message
             usage_module.add_makeup(run, "narration", reply.content)
+            usage_module.add_makeup(run, "thinking", getattr(reply, "reasoning_content", None))
             tool_calls = [
                 {"id": tc.id, "type": "function",
                  "function": {"name": tc.function.name, "arguments": tc.function.arguments or "{}"}}
@@ -379,6 +380,7 @@ async def _run_turn(store: ChatStore, run: Run, entry: dict) -> None:
                 run.emit("tool_end", {"id": call["id"], "name": name})
                 images += refs
             if images and vision:
+                usage_module.add_images(run, [store.resolve(chat_id, ref).read_bytes() for ref in images])
                 save({"role": "user", "content": "Renders produced by the tool calls above:",
                       "_images_for_llm": images, "_hidden": True})
         else:

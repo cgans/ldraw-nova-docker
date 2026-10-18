@@ -9,7 +9,7 @@ import json
 import uuid
 
 from claude_agent_sdk import (
-    AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, ResultMessage,
+    AssistantMessage, ClaudeAgentOptions, ClaudeSDKClient, ResultMessage, ThinkingBlock,
     SdkMcpTool, TextBlock, StreamEvent, create_sdk_mcp_server,
 )
 
@@ -44,6 +44,7 @@ async def run_claude(store, run, entry, save, execute, prompt, use_tools):
                       "_models": [m["id"] for m in result.models], "_images": refs})
                 content = [{"type": "text", "text": result.content}]
                 if llm_config.capabilities(entry)["vision"] is True:
+                    usage_module.add_images(run, [p.read_bytes() for p in result.images])
                     content += [{"type": "image", "mimeType": "image/png", "data": base64.b64encode(p.read_bytes()).decode()}
                                 for p in result.images]
                     if refs:
@@ -113,6 +114,8 @@ async def run_claude(store, run, entry, save, execute, prompt, use_tools):
                     usage_module.step_input(run, event.usage)
                 text = "\n".join(b.text for b in event.content if isinstance(b, TextBlock))
                 usage_module.add_makeup(run, "narration", text)
+                usage_module.add_makeup(run, "thinking", "".join(getattr(b, "thinking", "") or ""
+                                                                 for b in event.content if isinstance(b, ThinkingBlock)))
                 if text:
                     if not run.draft:
                         run.emit("text", {"delta": text})

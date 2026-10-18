@@ -52,5 +52,19 @@ def test_makeup_and_per_step_curve():
         usage.step_input(run, {"prompt_tokens": n})
     text = usage.makeup_summary(run.usage)
     assert text.startswith("Context added this turn (approx. tokens): system prompt 19k, earlier turns 0, "
-                           "agent's tool calls 10k, tool results 2k, narration 0")
+                           "agent's tool calls 10k, tool results 2k, narration 0, thinking 0, 0 image(s) ~0k")
     assert text.endswith("Prompt per step: first 20k, middle 45k, last 90k (3 requests)")
+    run.usage["output"] = 70000
+    assert "(mostly thinking): 60k" in usage.makeup_summary(run.usage)
+
+
+def test_image_tokens_from_png_header():
+    def png(w, h):
+        return b"\x89PNG\r\n\x1a\n" + b"\x00\x00\x00\rIHDR" + w.to_bytes(4, "big") + h.to_bytes(4, "big") + b"\x08\x06\x00\x00\x00"
+    assert usage.image_tokens(png(1024, 768)) == 1024 * 768 // 750
+    big = usage.image_tokens(png(3136, 1568))  # scaled to 1568 x 784
+    assert big == int(1568 * 784 / 750)
+    assert usage.image_tokens(b"not a png") == 0
+    run = FakeRun()
+    usage.add_images(run, [png(1024, 768), png(1024, 768)])
+    assert run.usage["makeup"]["images"] == 2 and run.usage["makeup"]["image_tokens"] == 2 * (1024 * 768 // 750)

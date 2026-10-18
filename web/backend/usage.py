@@ -67,7 +67,8 @@ def new_totals() -> dict:
     return {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "steps": 0, "cost_usd": None, "model": "",
             # Where the context comes from, in characters (about 4 per token), and
             # the prompt size of each model request in order.
-            "makeup": {"system_prompt": 0, "history": 0, "tool_calls": 0, "tool_results": 0, "narration": 0},
+            "makeup": {"system_prompt": 0, "history": 0, "tool_calls": 0, "tool_results": 0, "narration": 0,
+                       "thinking": 0, "images": 0, "image_tokens": 0},
             "per_step_input": []}
 
 
@@ -75,6 +76,22 @@ def add_makeup(run, part: str, text) -> None:
     """Count characters that enter the conversation, by origin."""
     if text:
         run.usage["makeup"][part] += len(text if isinstance(text, str) else str(text))
+
+
+def image_tokens(png: bytes) -> int:
+    """Rough vision-token cost of a PNG: about width*height/750 after the
+    provider scales the long side down to 1568 pixels."""
+    if len(png) < 24 or png[:8] != b"\x89PNG\r\n\x1a\n":
+        return 0
+    width, height = int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")
+    scale = min(1.0, 1568 / max(width, height, 1))
+    return int(width * scale * height * scale / 750)
+
+
+def add_images(run, pngs: list) -> None:
+    for png in pngs:
+        run.usage["makeup"]["images"] += 1
+        run.usage["makeup"]["image_tokens"] += image_tokens(png)
 
 
 def step_input(run, usage: Any) -> None:
@@ -88,8 +105,15 @@ def makeup_summary(totals: dict) -> str:
     tok = lambda chars: f"{chars / 4000:.0f}k" if chars >= 4000 else f"{chars / 4:.0f}"  # noqa: E731
     parts = [f"system prompt {tok(m.get('system_prompt', 0))}", f"earlier turns {tok(m.get('history', 0))}",
              f"agent's tool calls {tok(m.get('tool_calls', 0))}",
-             f"tool results {tok(m.get('tool_results', 0))}", f"narration {tok(m.get('narration', 0))}"]
+             f"tool results {tok(m.get('tool_results', 0))}", f"narration {tok(m.get('narration', 0))}",
+             f"thinking {tok(m.get('thinking', 0))}",
+             f"{m.get('images', 0)} image(s) ~{m.get('image_tokens', 0) / 1000:.0f}k"]
     text = "Context added this turn (approx. tokens): " + ", ".join(parts)
+    # Thinking text can be summarised by the provider, so also give the output
+    # that did not appear as tool calls or narration: mostly thinking.
+    hidden = totals.get("output", 0) - (m.get("tool_calls", 0) + m.get("narration", 0)) // 4
+    if hidden > 0:
+        text += f". Output not seen as tool calls or narration (mostly thinking): {hidden / 1000:.0f}k"
     steps = totals.get("per_step_input") or []
     if steps:
         k = lambda n: f"{n / 1000:.0f}k"  # noqa: E731
